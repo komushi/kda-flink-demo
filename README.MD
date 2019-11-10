@@ -1,3 +1,40 @@
+## 0. Create Aurora PostgreSQL Serverless Cluster
+
+### 0-1. Create DB Subnet Group and Cluster
+```
+aws rds create-db-subnet-group \
+--db-subnet-group-name database-vpc-subnet-group \
+--db-subnet-group-description database_vpc_subnet_group \
+--subnet-ids <subnet_id_1> <subnet_id_2> <subnet_id_3>
+
+aws rds create-db-cluster --db-cluster-identifier sls-postgres \
+--engine aurora-postgresql --engine-version 10.7 --engine-mode serverless \
+--scaling-configuration MinCapacity=2,MaxCapacity=4 \
+--enable-http-endpoint \
+--master-username <username> --master-user-password <password> \
+--enable-http-endpoint \
+--db-subnet-group-name database-vpc-subnet-group \
+--vpc-security-group-ids <security-group-id>
+
+```
+
+### 0-2. Create secret
+```
+aws secretsmanager create-secret --name sls-postgres-secret --secret-string "file://creds-sls-postgres.json"
+```
+
+### 0-3. Create Database 'triad'
+```
+aws rds-data execute-statement --resource-arn "arn:aws:rds:ap-northeast-1:042083552617:cluster:sls-postgres" --secret-arn "arn:aws:secretsmanager:ap-northeast-1:042083552617:secret:sls-postgres-secret-fNbs6H" --sql "SELECT datname FROM pg_database" --database "postgres"
+
+aws rds-data execute-statement --resource-arn "arn:aws:rds:ap-northeast-1:042083552617:cluster:sls-postgres" --secret-arn "arn:aws:secretsmanager:ap-northeast-1:042083552617:secret:sls-postgres-secret-fNbs6H" --sql "create DATABASE triad" --database "postgres"
+```
+
+### 0-4. Create Table 'Feature_Collection' - TODO
+```
+aws rds-data execute-statement --resource-arn "arn:aws:rds:ap-northeast-1:042083552617:cluster:sls-postgres" --secret-arn "arn:aws:secretsmanager:ap-northeast-1:042083552617:secret:sls-postgres-secret-fNbs6H" --sql "create table Lanes(lane_id varchar(20), start_node varchar(20), end_node varchar(20), tile_id varchar(20), version integer, PRIMARY KEY(lane_id,version))" --database "triad"
+```
+
 ## 1. Create local flink-connector-kinesis repo
 ### 1-1. Download and Build Flink 1.9.1
 [flink](https://github.com/apache/flink/archive/release-1.9.1.zip)
