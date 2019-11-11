@@ -5,8 +5,8 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.amazonaws</groupId>
-    <artifactId>flink-tableapi-custom-sink-app</artifactId>
-    <version>1.5.3</version>
+    <artifactId>kda-flink-demo</artifactId>
+    <version>1.0.8</version>
     <packaging>jar</packaging>
 
     <properties>

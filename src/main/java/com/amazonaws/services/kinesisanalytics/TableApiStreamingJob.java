@@ -1,8 +1,6 @@
 package com.amazonaws.services.kinesisanalytics;
 
-import com.amazonaws.services.kinesisanalytics.flink.connectors.producer.FlinkKinesisFirehoseProducer;
-import org.apache.flink.api.common.functions.AggregateFunction;
-import org.apache.flink.api.common.serialization.SimpleStringSchema;
+import org.apache.commons.lang.exception.ExceptionUtils;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.tuple.Tuple3;
@@ -28,6 +26,8 @@ import org.apache.flink.table.api.Table;
 import org.apache.flink.formats.json.JsonNodeDeserializationSchema;
 
 import com.amazonaws.services.kinesisanalytics.sink.DataApiBatchSink;
+import com.amazonaws.services.kinesisanalytics.sink.DataApiCheckpointSink;
+
 
 import java.sql.Timestamp;
 import java.util.Properties;
@@ -40,7 +40,7 @@ public class TableApiStreamingJob {
 
     private static final String region = "ap-northeast-1";
     private static final String inputStreamName = "amp_geojson";
-    private static final String outputDeliveryStreamName = "amp_geojson_sliding_flink";
+    private static final Integer threshold = 8;
     private static final String resourceArn = "arn:aws:rds:ap-northeast-1:042083552617:cluster:sls-postgres";
     private static final String secretArn = "arn:aws:secretsmanager:ap-northeast-1:042083552617:secret:sls-postgres-secret-fNbs6H";
     private static final String database = "triad";
@@ -57,21 +57,26 @@ public class TableApiStreamingJob {
                 new JsonNodeDeserializationSchema(), inputProperties));
     }
 
-    private static FlinkKinesisFirehoseProducer<String> createFirehoseSinkFromStaticConfig() {
-        Properties outputProperties = new Properties();
-        outputProperties.setProperty(ConsumerConfigConstants.AWS_REGION, region);
 
-        FlinkKinesisFirehoseProducer<String> sink = new FlinkKinesisFirehoseProducer<>(outputDeliveryStreamName, new SimpleStringSchema(), outputProperties);
-        return sink;
-    }
-
-    private static DataApiBatchSink createDataApiSinkFromStaticConfig() {
+    private static DataApiBatchSink createDataApiBatchSink() {
         Properties outputProperties = new Properties();
         outputProperties.setProperty("RESOURCE_ARN", resourceArn);
         outputProperties.setProperty("SECRET_ARN", secretArn);
         outputProperties.setProperty("DATABASE", database);
+        outputProperties.setProperty("THRESHOLD", threshold.toString());
 
         DataApiBatchSink sink = new DataApiBatchSink(outputProperties);
+        return sink;
+    }
+
+    private static DataApiCheckpointSink createDataApiCheckpointSink() {
+        Properties outputProperties = new Properties();
+        outputProperties.setProperty("RESOURCE_ARN", resourceArn);
+        outputProperties.setProperty("SECRET_ARN", secretArn);
+        outputProperties.setProperty("DATABASE", database);
+        outputProperties.setProperty("THRESHOLD", threshold.toString());
+
+        DataApiCheckpointSink sink = new DataApiCheckpointSink(outputProperties);
         return sink;
     }
 
@@ -92,14 +97,15 @@ public class TableApiStreamingJob {
 
     public static void main(String[] args) throws Exception {
       try {
-        log.warn("CloudWatch TableApiStreamingJob 1.5.0");
 
         final StreamExecutionEnvironment env =
                 StreamExecutionEnvironment.getExecutionEnvironment();
 
         //Set to input data Timestamp indicating the time of the event to process the data sequentially.
         env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
-        env.enableCheckpointing(1000L, CheckpointingMode.EXACTLY_ONCE);
+        env.enableCheckpointing(6000L, CheckpointingMode.EXACTLY_ONCE);
+
+        log.warn("getCheckpointInterval:" + env.getCheckpointInterval());
 
         //Leverage JsonNodeDeserializationSchema to convert incoming JSON to generic ObjectNode
         DataStream<ObjectNode> inputStreamObject = createSourceFromStaticConfig(env);
@@ -111,7 +117,7 @@ public class TableApiStreamingJob {
         DataStream<Tuple2<String, Timestamp>> inputStream = inputStreamObject
           .map((ObjectNode object) -> {
             //For debugging input
-            log.warn(object.toString());
+//            log.warn(object.toString());
 
             JsonNode jsonNode = jsonParser.readValue(object.toString(), JsonNode.class);
             JsonNode properties = jsonNode.get("properties");
@@ -188,13 +194,14 @@ public class TableApiStreamingJob {
           return new Tuple3<String, Long, Timestamp>(value.f0, value.f1, value.f2);
         })
         .returns(Types.TUPLE(Types.STRING, Types.LONG, Types.SQL_TIMESTAMP))
-        .addSink(createDataApiSinkFromStaticConfig());
+        .addSink(createDataApiCheckpointSink());
 
+        log.warn("getCheckpointInterval:" + env.getCheckpointInterval());
 
         env.execute("AMP GeoJSON Import Count");
       }
       catch (Exception e){
-        log.warn(e.toString());
+        log.error(ExceptionUtils.getStackTrace(e));
         throw e;
       }
     }
