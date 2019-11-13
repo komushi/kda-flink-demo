@@ -146,22 +146,18 @@ public class TableApiStreamingJob {
         StreamTableEnvironment tableEnv = TableEnvironment.getTableEnvironment(env);
 
         //Convert from DataStream to Table, replacing replacing incoming field with "Time Attribute" rowtime and aliasing it to orderTime and exchangeRateTime respectively.
-        Table inputTable = tableEnv.fromDataStream(inputStreamWithTime, "N02_001, RECEIVED_ON, eventtime.rowtime");
+        Table inputTable = tableEnv.fromDataStream(inputStreamWithTime, "N02_001, RECEIVED_ON, rowtime.rowtime");
 
         //Register the table for use in SQL queries
         tableEnv.registerTable("Inputs", inputTable);
-
-        //Register UDF for display of Timestamp in output records as a formatted string instead of a number
-        // tableEnv.registerFunction("TimestampToString", new TimestampToString());
-
 
         //Define a new Dynamic Table as the results of a SQL Query.
         Table resultTable = tableEnv.sqlQuery(""+
           "SELECT " +
           "  CAST (N02_001 AS VARCHAR(10)) AS RAILWAY_CLASS, " +
-          "  COUNT(*) OVER (PARTITION BY N02_001 ORDER BY eventtime RANGE BETWEEN INTERVAL '30' MINUTE PRECEDING AND CURRENT ROW) AS RAILWAY_CLASS_COUNT, " +
+          "  COUNT(*) OVER (PARTITION BY N02_001 ORDER BY rowtime RANGE BETWEEN INTERVAL '30' MINUTE PRECEDING AND CURRENT ROW) AS RAILWAY_CLASS_COUNT, " +
           "  RECEIVED_ON, " +
-          "  eventtime as rowtime " +
+          "  rowtime " +
           " FROM Inputs "
         );
 
@@ -174,7 +170,6 @@ public class TableApiStreamingJob {
         );
 
         DataStream<Tuple4<String, Long, Timestamp, Timestamp>> resultSet = tableEnv.toAppendStream(resultTable, tupleType);
-
 
         resultSet.map((Tuple4<String, Long, Timestamp, Timestamp> value) -> {
           String output = " RAILWAY_CLASS: " + value.f0 + " RECEIVED_ON: " + value.f2 + " rowtime: " + value.f3 + "\n";
