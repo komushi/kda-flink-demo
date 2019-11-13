@@ -1,6 +1,7 @@
 package com.amazonaws.services.kinesisanalytics;
 
 import com.amazonaws.services.kinesisanalytics.flink.connectors.producer.FlinkKinesisFirehoseProducer;
+import com.amazonaws.services.kinesisanalytics.runtime.KinesisAnalyticsRuntime;
 import org.apache.flink.api.common.functions.AggregateFunction;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.api.common.typeinfo.Types;
@@ -29,48 +30,37 @@ import org.apache.flink.formats.json.JsonNodeDeserializationSchema;
 import com.amazonaws.services.kinesisanalytics.sink.DataApiSingleSink;
 
 import java.sql.Timestamp;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Date;
 import java.text.SimpleDateFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import scala.tools.nsc.transform.patmat.Logic;
 
 public class TableApiStreamingJobSingle {
 
-    private static final String region = "ap-northeast-1";
-    private static final String inputStreamName = "amp_geojson";
-    private static final String outputDeliveryStreamName = "amp_geojson_sliding_flink";
-    private static final String resourceArn = "arn:aws:rds:ap-northeast-1:042083552617:cluster:sls-postgres";
-    private static final String secretArn = "arn:aws:secretsmanager:ap-northeast-1:042083552617:secret:sls-postgres-secret-fNbs6H";
-    private static final String database = "triad";
     private static final Logger log = LoggerFactory.getLogger(TableApiStreamingJob.class);
 
     private static DataStream<ObjectNode> createSourceFromStaticConfig(
-            StreamExecutionEnvironment env) {
-        Properties inputProperties = new Properties();
-        inputProperties.setProperty(ConsumerConfigConstants.AWS_REGION, region);
-        inputProperties.setProperty(ConsumerConfigConstants.STREAM_INITIAL_POSITION,
-                "LATEST");
+            StreamExecutionEnvironment env) throws Exception {
+        Map<String, Properties> applicationProperties = KinesisAnalyticsRuntime.getApplicationProperties();
+        Properties sourceConfigProperties = applicationProperties.get("SourceConfigProperties");
 
-        return env.addSource(new FlinkKinesisConsumer<>(inputStreamName,
+        Properties inputProperties = new Properties();
+        inputProperties.setProperty(ConsumerConfigConstants.AWS_REGION, sourceConfigProperties.getProperty("AWS_REGION"));
+        inputProperties.setProperty(ConsumerConfigConstants.STREAM_INITIAL_POSITION, sourceConfigProperties.getProperty("STREAM_INITIAL_POSITION"));
+
+        return env.addSource(new FlinkKinesisConsumer<>(sourceConfigProperties.getProperty("INPUT_STREAM_NAME"),
                 new JsonNodeDeserializationSchema(), inputProperties));
     }
 
-    private static FlinkKinesisFirehoseProducer<String> createFirehoseSinkFromStaticConfig() {
-        Properties outputProperties = new Properties();
-        outputProperties.setProperty(ConsumerConfigConstants.AWS_REGION, region);
 
-        FlinkKinesisFirehoseProducer<String> sink = new FlinkKinesisFirehoseProducer<>(outputDeliveryStreamName, new SimpleStringSchema(), outputProperties);
-        return sink;
-    }
+    private static DataApiSingleSink createDataApiSinkFromStaticConfig() throws Exception {
+        Map<String, Properties> applicationProperties = KinesisAnalyticsRuntime.getApplicationProperties();
+        Properties sinkConfigProperties = applicationProperties.get("SinkConfigProperties");
 
-    private static DataApiSingleSink createDataApiSinkFromStaticConfig() {
-        Properties outputProperties = new Properties();
-        outputProperties.setProperty("RESOURCE_ARN", resourceArn);
-        outputProperties.setProperty("SECRET_ARN", secretArn);
-        outputProperties.setProperty("DATABASE", database);
-
-        DataApiSingleSink sink = new DataApiSingleSink(outputProperties);
+        DataApiSingleSink sink = new DataApiSingleSink(sinkConfigProperties);
         return sink;
     }
 

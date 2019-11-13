@@ -37,6 +37,8 @@ public class DataApiCheckpointSink extends RichSinkFunction<Tuple3<String, Long,
 //    private transient TupleState tupleState;
     private transient ListState<TupleState> checkpointedState;
 
+    private int count = 0;
+
 
     private static final Logger log = LoggerFactory.getLogger(DataApiCheckpointSink.class);
 
@@ -46,7 +48,7 @@ public class DataApiCheckpointSink extends RichSinkFunction<Tuple3<String, Long,
 
     @Override
     public void open(Configuration parameters) throws Exception {
-        log.warn("open");
+//        log.warn("open");
 
         super.open(parameters);
 
@@ -57,18 +59,22 @@ public class DataApiCheckpointSink extends RichSinkFunction<Tuple3<String, Long,
     @Override
     public void invoke(Tuple3<String, Long, Timestamp> value, Context context) throws Exception {
         try {
-            log.warn("invoke start: " + ZonedDateTime.now().toString() + "f0:" + value.f0 + " f1:" + value.f1.toString());
+//            log.warn("invoke start: " + ZonedDateTime.now().toString() + "f0:" + value.f0 + " f1:" + value.f1.toString());
+
+            count++;
+            log.warn("count:" + count);
 
             initializeTupleState();
 
             TupleState checkpointedTupleState = checkpointedState.get().iterator().next();
 
-            checkpointedTupleState.pendingTuples.add(value);
+            synchronized (checkpointedTupleState.pendingTuples) {
+                checkpointedTupleState.pendingTuples.add(value);
 
-            if (checkpointedTupleState.pendingTuples.size() >= Integer.valueOf(this.configProps.getProperty("THRESHOLD"))) {
-                batchExecute(checkpointedTupleState.pendingTuples);
+                if (checkpointedTupleState.pendingTuples.size() >= Integer.valueOf(this.configProps.getProperty("THRESHOLD"))) {
+                    batchExecute(checkpointedTupleState.pendingTuples);
+                }
             }
-
 
         }
         catch (Exception e) {
@@ -80,7 +86,7 @@ public class DataApiCheckpointSink extends RichSinkFunction<Tuple3<String, Long,
     @Override
     public void snapshotState(FunctionSnapshotContext context) throws Exception {
         try {
-            log.warn("snapshotState:" + ZonedDateTime.now().toString());
+//            log.warn("snapshotState:" + ZonedDateTime.now().toString());
 
             long checkpointId = context.getCheckpointId();
 
@@ -88,16 +94,21 @@ public class DataApiCheckpointSink extends RichSinkFunction<Tuple3<String, Long,
 
             TupleState tupleState = checkpointedState.get().iterator().next();
 
-            List<Tuple3<String, Long, Timestamp>> checkpointedTupleList = tupleState.pendingTuplesPerCheckpoint.get(checkpointId);
+            synchronized(tupleState.pendingTuplesPerCheckpoint) {
+                List<Tuple3<String, Long, Timestamp>> checkpointedTupleList = tupleState.pendingTuplesPerCheckpoint.get(checkpointId);
 
-            if (checkpointedTupleList == null) {
-                checkpointedTupleList = new ArrayList<>();
-                tupleState.pendingTuplesPerCheckpoint.put(checkpointId, checkpointedTupleList);
+                if (checkpointedTupleList == null) {
+                    checkpointedTupleList = new ArrayList<>();
+                    tupleState.pendingTuplesPerCheckpoint.put(checkpointId, checkpointedTupleList);
+                }
+
+                checkpointedTupleList.addAll(tupleState.pendingTuples);
             }
 
-            checkpointedTupleList.addAll(tupleState.pendingTuples);
-            tupleState.pendingTuples.clear();
 
+            synchronized (tupleState.pendingTuples) {
+                tupleState.pendingTuples.clear();
+            }
 
         }
         catch (Exception e) {
@@ -111,7 +122,7 @@ public class DataApiCheckpointSink extends RichSinkFunction<Tuple3<String, Long,
     public void initializeState(FunctionInitializationContext context) throws Exception {
         try {
 
-            log.warn("initializeState:" + ZonedDateTime.now().toString());
+//            log.warn("initializeState:" + ZonedDateTime.now().toString());
 
             ListStateDescriptor<TupleState> descriptor =
                     new ListStateDescriptor<>(
@@ -124,7 +135,7 @@ public class DataApiCheckpointSink extends RichSinkFunction<Tuple3<String, Long,
                 int cnt = 0;
                 for (TupleState element : checkpointedState.get()) {
                     cnt++;
-                    log.warn(cnt + " TupleState(s) with " + element.pendingTuplesPerCheckpoint.size() + " pendingTupleList(s)");
+                    log.warn(cnt + " TupleState(s) with " + element.toString());
                 }
             }
             
@@ -139,26 +150,30 @@ public class DataApiCheckpointSink extends RichSinkFunction<Tuple3<String, Long,
     @Override
     public void notifyCheckpointComplete(long checkpointId) throws Exception {
         try {
-            log.warn("notifyCheckpointComplete:" + ZonedDateTime.now().toString());
+//            log.warn("notifyCheckpointComplete:" + ZonedDateTime.now().toString());
 
             TupleState tupleState = checkpointedState.get().iterator().next();
 
-            Iterator<Map.Entry<Long, List<Tuple3<String, Long, Timestamp>>>> pendingCheckpointsIt =
-                tupleState.pendingTuplesPerCheckpoint.entrySet().iterator();
+            synchronized(tupleState.pendingTuplesPerCheckpoint) {
+                Iterator<Map.Entry<Long, List<Tuple3<String, Long, Timestamp>>>> pendingCheckpointsIt =
+                        tupleState.pendingTuplesPerCheckpoint.entrySet().iterator();
 
-            while (pendingCheckpointsIt.hasNext()) {
-                Map.Entry<Long, List<Tuple3<String, Long, Timestamp>>> entry = pendingCheckpointsIt.next();
-                Long pastCheckpointId = entry.getKey();
-                List<Tuple3<String, Long, Timestamp>> pendingTuples = entry.getValue();
+                while (pendingCheckpointsIt.hasNext()) {
+                    Map.Entry<Long, List<Tuple3<String, Long, Timestamp>>> entry = pendingCheckpointsIt.next();
+                    Long pastCheckpointId = entry.getKey();
+                    List<Tuple3<String, Long, Timestamp>> checkpointedTuples = entry.getValue();
 
-                if (pastCheckpointId <= checkpointId) {
+                    if (pastCheckpointId <= checkpointId) {
 
-                    batchExecute(pendingTuples);
+                        synchronized (checkpointedTuples) {
+                            batchExecute(checkpointedTuples);
+                        }
 
-                    pendingCheckpointsIt.remove();
-
+                        pendingCheckpointsIt.remove();
+                    }
                 }
             }
+
         }
         catch (Exception e) {
             log.error(ExceptionUtils.getStackTrace(e));
@@ -186,23 +201,23 @@ public class DataApiCheckpointSink extends RichSinkFunction<Tuple3<String, Long,
 
         for (Tuple3<String, Long, Timestamp> element: pendingTuples) {
             paramList.add(
-                    Arrays.asList(
-                            new SqlParameter().withName("cnt").withValue(new Field().withLongValue(element.f1)),
-                            new SqlParameter().withName("class").withValue(new Field().withStringValue(element.f0)),
-                            new SqlParameter().withName("time").withValue(new Field().withStringValue(element.f2.toString()))
-                    )
+                Arrays.asList(
+                    new SqlParameter().withName("cnt").withValue(new Field().withLongValue(element.f1)),
+                    new SqlParameter().withName("class").withValue(new Field().withStringValue(element.f0)),
+                    new SqlParameter().withName("time").withValue(new Field().withStringValue(element.f2.toString()))
+                )
             );
         }
 
         return paramList;
     }
 
-    private void batchExecute(List<Tuple3<String, Long, Timestamp>> pendingTuples) {
+    private synchronized void batchExecute(List<Tuple3<String, Long, Timestamp>> tuples) {
 
 
-        if (pendingTuples.size() > 0) {
+        if (tuples.size() > 0) {
 
-            Collection<List<SqlParameter>> parameterSets = makeParameterSets(pendingTuples);
+            Collection<List<SqlParameter>> parameterSets = makeParameterSets(tuples);
 
             String sqlString = "INSERT INTO Feature_Collection VALUES (:class, :cnt, to_timestamp(:time, 'yyyy-mm-dd hh24:mi:ss.ms')) " +
                     "ON CONFLICT ON CONSTRAINT feature_collection_pkey " +
@@ -215,11 +230,11 @@ public class DataApiCheckpointSink extends RichSinkFunction<Tuple3<String, Long,
                     .withSql(sqlString)
                     .withParameterSets(parameterSets);
 
-            log.warn(ZonedDateTime.now().toString() + " " + request.toString());
+            log.warn(tuples.size() + " tuples: " + request.toString());
 
             rdsData.batchExecuteStatement(request);
 
-            pendingTuples.clear();
+            tuples.clear();
         }
     }
 
@@ -239,7 +254,7 @@ public class DataApiCheckpointSink extends RichSinkFunction<Tuple3<String, Long,
 
         @Override
         public String toString() {
-            return "pendingTuples.size()=" + pendingTuples.size() + " pendingTuplesPerCheckpoint.size():" + pendingTuplesPerCheckpoint.size();
+            return "pendingTuples.size():" + pendingTuples.size() + " pendingTuplesPerCheckpoint.size():" + pendingTuplesPerCheckpoint.size();
         }
     }
 }

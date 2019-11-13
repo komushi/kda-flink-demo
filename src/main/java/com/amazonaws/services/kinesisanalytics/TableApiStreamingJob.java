@@ -27,56 +27,48 @@ import org.apache.flink.formats.json.JsonNodeDeserializationSchema;
 
 import com.amazonaws.services.kinesisanalytics.sink.DataApiBatchSink;
 import com.amazonaws.services.kinesisanalytics.sink.DataApiCheckpointSink;
+import com.amazonaws.services.kinesisanalytics.runtime.KinesisAnalyticsRuntime;
 
 
 import java.sql.Timestamp;
-import java.util.Properties;
-import java.util.Date;
+import java.util.*;
 import java.text.SimpleDateFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class TableApiStreamingJob {
 
-    private static final String region = "ap-northeast-1";
-    private static final String inputStreamName = "amp_geojson";
-    private static final Integer threshold = 8;
-    private static final String resourceArn = "arn:aws:rds:ap-northeast-1:042083552617:cluster:sls-postgres";
-    private static final String secretArn = "arn:aws:secretsmanager:ap-northeast-1:042083552617:secret:sls-postgres-secret-fNbs6H";
-    private static final String database = "triad";
     private static final Logger log = LoggerFactory.getLogger(TableApiStreamingJob.class);
 
     private static DataStream<ObjectNode> createSourceFromStaticConfig(
-            StreamExecutionEnvironment env) {
-        Properties inputProperties = new Properties();
-        inputProperties.setProperty(ConsumerConfigConstants.AWS_REGION, region);
-        inputProperties.setProperty(ConsumerConfigConstants.STREAM_INITIAL_POSITION,
-                "LATEST");
+            StreamExecutionEnvironment env) throws Exception {
 
-        return env.addSource(new FlinkKinesisConsumer<>(inputStreamName,
+        Map<String, Properties> applicationProperties = KinesisAnalyticsRuntime.getApplicationProperties();
+        Properties sourceConfigProperties = applicationProperties.get("SourceConfigProperties");
+
+        Properties inputProperties = new Properties();
+        inputProperties.setProperty(ConsumerConfigConstants.AWS_REGION, sourceConfigProperties.getProperty("AWS_REGION"));
+        inputProperties.setProperty(ConsumerConfigConstants.STREAM_INITIAL_POSITION, sourceConfigProperties.getProperty("STREAM_INITIAL_POSITION"));
+
+        return env.addSource(new FlinkKinesisConsumer<>(sourceConfigProperties.getProperty("INPUT_STREAM_NAME"),
                 new JsonNodeDeserializationSchema(), inputProperties));
     }
 
 
-    private static DataApiBatchSink createDataApiBatchSink() {
-        Properties outputProperties = new Properties();
-        outputProperties.setProperty("RESOURCE_ARN", resourceArn);
-        outputProperties.setProperty("SECRET_ARN", secretArn);
-        outputProperties.setProperty("DATABASE", database);
-        outputProperties.setProperty("THRESHOLD", threshold.toString());
+    private static DataApiBatchSink createDataApiBatchSink() throws Exception {
+        Map<String, Properties> applicationProperties = KinesisAnalyticsRuntime.getApplicationProperties();
+        Properties sinkConfigProperties = applicationProperties.get("SinkConfigProperties");
 
-        DataApiBatchSink sink = new DataApiBatchSink(outputProperties);
+        DataApiBatchSink sink = new DataApiBatchSink(sinkConfigProperties);
         return sink;
     }
 
-    private static DataApiCheckpointSink createDataApiCheckpointSink() {
-        Properties outputProperties = new Properties();
-        outputProperties.setProperty("RESOURCE_ARN", resourceArn);
-        outputProperties.setProperty("SECRET_ARN", secretArn);
-        outputProperties.setProperty("DATABASE", database);
-        outputProperties.setProperty("THRESHOLD", threshold.toString());
+    private static DataApiCheckpointSink createDataApiCheckpointSink() throws Exception {
+        Map<String, Properties> applicationProperties = KinesisAnalyticsRuntime.getApplicationProperties();
 
-        DataApiCheckpointSink sink = new DataApiCheckpointSink(outputProperties);
+        Properties sinkConfigProperties = applicationProperties.get("SinkConfigProperties");
+
+        DataApiCheckpointSink sink = new DataApiCheckpointSink(sinkConfigProperties);
         return sink;
     }
 
@@ -85,10 +77,10 @@ public class TableApiStreamingJob {
       try {
         Date parsedDate = dateFormat.parse(dateString);
         Timestamp timestamp = new java.sql.Timestamp(parsedDate.getTime());
-        // log.warn(timestamp.toString() + " vs " + dateString + " vs " + parsedDate.toString());
+
         return timestamp;
       } catch(Exception e) {
-        log.warn(e.toString());
+        log.error(ExceptionUtils.getStackTrace(e));
         Date parsedDate = new Date();
         Timestamp timestamp = new java.sql.Timestamp(parsedDate.getTime());
         return timestamp;
@@ -105,7 +97,7 @@ public class TableApiStreamingJob {
         env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
         env.enableCheckpointing(6000L, CheckpointingMode.EXACTLY_ONCE);
 
-        log.warn("getCheckpointInterval:" + env.getCheckpointInterval());
+//        log.warn("getCheckpointInterval:" + env.getCheckpointInterval());
 
         //Leverage JsonNodeDeserializationSchema to convert incoming JSON to generic ObjectNode
         DataStream<ObjectNode> inputStreamObject = createSourceFromStaticConfig(env);
@@ -183,20 +175,17 @@ public class TableApiStreamingJob {
 
         DataStream<Tuple4<String, Long, Timestamp, Timestamp>> resultSet = tableEnv.toAppendStream(resultTable, tupleType);
 
+
         resultSet.map((Tuple4<String, Long, Timestamp, Timestamp> value) -> {
-          // JsonNode jsonNode = jsonParser.readValue(value, JsonNode.class);
-          // String output = mapper.writeValueAsString(jsonNode);
-
           String output = " RAILWAY_CLASS: " + value.f0 + " RECEIVED_ON: " + value.f2 + " rowtime: " + value.f3 + "\n";
-
-          log.warn("resultSet output: " + output);
+//          log.warn("resultSet output: " + output);
 
           return new Tuple3<String, Long, Timestamp>(value.f0, value.f1, value.f2);
         })
         .returns(Types.TUPLE(Types.STRING, Types.LONG, Types.SQL_TIMESTAMP))
         .addSink(createDataApiCheckpointSink());
 
-        log.warn("getCheckpointInterval:" + env.getCheckpointInterval());
+//        log.warn("getCheckpointInterval:" + env.getCheckpointInterval());
 
         env.execute("AMP GeoJSON Import Count");
       }
