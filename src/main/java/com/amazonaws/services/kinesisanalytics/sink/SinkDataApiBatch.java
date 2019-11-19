@@ -24,7 +24,7 @@ import java.sql.Timestamp;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class DataApiBatchSink extends RichSinkFunction<Tuple3<String, Long, Timestamp>>
+public class SinkDataApiBatch extends RichSinkFunction<Tuple3<String, Long, Timestamp>>
         implements CheckpointedFunction {
 
     private Properties configProps;
@@ -34,9 +34,9 @@ public class DataApiBatchSink extends RichSinkFunction<Tuple3<String, Long, Time
     private List<Tuple3<String, Long, Timestamp>> bufferedElements;
     private final int threshold = 10;
 
-    private static final Logger log = LoggerFactory.getLogger(DataApiBatchSink.class);
+    private static final Logger log = LoggerFactory.getLogger(SinkDataApiBatch.class);
 
-    public DataApiBatchSink(Properties configProps) {
+    public SinkDataApiBatch(Properties configProps) {
         this.configProps = configProps;
         this.bufferedElements = new ArrayList<>();
     }

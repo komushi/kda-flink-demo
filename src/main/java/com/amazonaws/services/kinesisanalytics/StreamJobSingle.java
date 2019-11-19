@@ -27,7 +27,7 @@ import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.Table;
 import org.apache.flink.formats.json.JsonNodeDeserializationSchema;
 
-import com.amazonaws.services.kinesisanalytics.sink.DataApiSingleSink;
+import com.amazonaws.services.kinesisanalytics.sink.SinkDataApiSingle;
 
 import java.sql.Timestamp;
 import java.util.Map;
@@ -38,9 +38,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.tools.nsc.transform.patmat.Logic;
 
-public class TableApiStreamingJobSingle {
+public class StreamJobSingle {
 
-    private static final Logger log = LoggerFactory.getLogger(TableApiStreamingJob.class);
+    private static final Logger log = LoggerFactory.getLogger(StreamJobSingle.class);
 
     private static DataStream<ObjectNode> createSourceFromStaticConfig(
             StreamExecutionEnvironment env) throws Exception {
@@ -56,11 +56,11 @@ public class TableApiStreamingJobSingle {
     }
 
 
-    private static DataApiSingleSink createDataApiSinkFromStaticConfig() throws Exception {
+    private static SinkDataApiSingle createDataApiSink() throws Exception {
         Map<String, Properties> applicationProperties = KinesisAnalyticsRuntime.getApplicationProperties();
         Properties sinkConfigProperties = applicationProperties.get("SinkConfigProperties");
 
-        DataApiSingleSink sink = new DataApiSingleSink(sinkConfigProperties);
+        SinkDataApiSingle sink = new SinkDataApiSingle(sinkConfigProperties);
         return sink;
     }
 
@@ -176,7 +176,7 @@ public class TableApiStreamingJobSingle {
           return new Tuple3<String, Long, Timestamp>(value.f0, value.f1, value.f2);
         })
         .returns(Types.TUPLE(Types.STRING, Types.LONG, Types.SQL_TIMESTAMP))
-        .addSink(createDataApiSinkFromStaticConfig());
+        .addSink(createDataApiSink());
 
 
         env.execute("AMP GeoJSON Import Count");

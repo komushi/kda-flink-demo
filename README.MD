@@ -30,9 +30,19 @@ aws rds-data execute-statement --resource-arn "arn:aws:rds:ap-northeast-1:042083
 aws rds-data execute-statement --resource-arn "arn:aws:rds:ap-northeast-1:042083552617:cluster:sls-postgres" --secret-arn "arn:aws:secretsmanager:ap-northeast-1:042083552617:secret:sls-postgres-secret-fNbs6H" --sql "create DATABASE triad" --database "postgres"
 ```
 
-### 0-4. Create Table 'Feature_Collection' - TODO
+### 0-4. Create Table 'Tumbling'
 ```
-aws rds-data execute-statement --resource-arn "arn:aws:rds:ap-northeast-1:042083552617:cluster:sls-postgres" --secret-arn "arn:aws:secretsmanager:ap-northeast-1:042083552617:secret:sls-postgres-secret-fNbs6H" --sql "create table Lanes(lane_id varchar(20), start_node varchar(20), end_node varchar(20), tile_id varchar(20), version integer, PRIMARY KEY(lane_id,version))" --database "triad"
+aws rds-data execute-statement --resource-arn "arn:aws:rds:ap-northeast-1:042083552617:cluster:sls-postgres" --secret-arn "arn:aws:secretsmanager:ap-northeast-1:042083552617:secret:sls-postgres-secret-fNbs6H" --sql "create table Tumbling(RAILWAY_CLASS varchar(20), RAILWAY_CLASS_COUNT bigint, WINDOW_START timestamp, WINDOW_END timestamp, PRIMARY KEY(RAILWAY_CLASS, WINDOW_START, WINDOW_END))" --database "triad"
+```
+
+### 0-5. Create Table 'Sliding'
+```
+aws rds-data execute-statement --resource-arn "arn:aws:rds:ap-northeast-1:042083552617:cluster:sls-postgres" --secret-arn "arn:aws:secretsmanager:ap-northeast-1:042083552617:secret:sls-postgres-secret-fNbs6H" --sql "create table Sliding(RAILWAY_CLASS varchar(20), RAILWAY_CLASS_COUNT bigint, EVENT_TIME timestamp, PRIMARY KEY(RAILWAY_CLASS))" --database "triad"
+```
+
+### 0-6. Create Table 'Hopping'
+```
+aws rds-data execute-statement --resource-arn "arn:aws:rds:ap-northeast-1:042083552617:cluster:sls-postgres" --secret-arn "arn:aws:secretsmanager:ap-northeast-1:042083552617:secret:sls-postgres-secret-fNbs6H" --sql "create table Hopping(RAILWAY_CLASS varchar(20), RAILWAY_CLASS_COUNT bigint, WINDOW_START timestamp, WINDOW_END timestamp, RECEIVED_ON timestamp, PRIMARY KEY(RAILWAY_CLASS, WINDOW_START, WINDOW_END))" --database "triad"
 ```
 
 ## 1. Create local flink-connector-kinesis repo

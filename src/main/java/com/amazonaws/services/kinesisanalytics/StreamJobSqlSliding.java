@@ -25,8 +25,7 @@ import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.Table;
 import org.apache.flink.formats.json.JsonNodeDeserializationSchema;
 
-import com.amazonaws.services.kinesisanalytics.sink.DataApiBatchSink;
-import com.amazonaws.services.kinesisanalytics.sink.DataApiCheckpointSink;
+import com.amazonaws.services.kinesisanalytics.sink.SinkDataApiSliding;
 import com.amazonaws.services.kinesisanalytics.runtime.KinesisAnalyticsRuntime;
 
 
@@ -36,9 +35,9 @@ import java.text.SimpleDateFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class TableApiStreamingJob {
+public class StreamJobSqlSliding {
 
-    private static final Logger log = LoggerFactory.getLogger(TableApiStreamingJob.class);
+    private static final Logger log = LoggerFactory.getLogger(StreamJobSqlSliding.class);
 
     private static DataStream<ObjectNode> createSourceFromStaticConfig(
             StreamExecutionEnvironment env) throws Exception {
@@ -55,20 +54,12 @@ public class TableApiStreamingJob {
     }
 
 
-    private static DataApiBatchSink createDataApiBatchSink() throws Exception {
-        Map<String, Properties> applicationProperties = KinesisAnalyticsRuntime.getApplicationProperties();
-        Properties sinkConfigProperties = applicationProperties.get("SinkConfigProperties");
-
-        DataApiBatchSink sink = new DataApiBatchSink(sinkConfigProperties);
-        return sink;
-    }
-
-    private static DataApiCheckpointSink createDataApiCheckpointSink() throws Exception {
+    private static SinkDataApiSliding createDataApiSink() throws Exception {
         Map<String, Properties> applicationProperties = KinesisAnalyticsRuntime.getApplicationProperties();
 
         Properties sinkConfigProperties = applicationProperties.get("SinkConfigProperties");
 
-        DataApiCheckpointSink sink = new DataApiCheckpointSink(sinkConfigProperties);
+        SinkDataApiSliding sink = new SinkDataApiSliding(sinkConfigProperties);
         return sink;
     }
 
@@ -90,14 +81,21 @@ public class TableApiStreamingJob {
     public static void main(String[] args) throws Exception {
       try {
 
+        log.warn("StreamJobSqlSliding main");
+
+        Map<String, Properties> applicationProperties = KinesisAnalyticsRuntime.getApplicationProperties();
+        Properties processorConfigProperties = applicationProperties.get("ProcessorConfigProperties");
+
+        String checkpointInterval = processorConfigProperties.getProperty("CHECKPOINT_INTERVAL");
+        String interval = processorConfigProperties.getProperty("INTERVAL_AMOUNT");
+        String uom = processorConfigProperties.getProperty("INTERVAL_UOM");
+
         final StreamExecutionEnvironment env =
                 StreamExecutionEnvironment.getExecutionEnvironment();
 
         //Set to input data Timestamp indicating the time of the event to process the data sequentially.
         env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
-        env.enableCheckpointing(6000L, CheckpointingMode.EXACTLY_ONCE);
-
-//        log.warn("getCheckpointInterval:" + env.getCheckpointInterval());
+        env.enableCheckpointing(Long.parseLong(checkpointInterval), CheckpointingMode.EXACTLY_ONCE);
 
         //Leverage JsonNodeDeserializationSchema to convert incoming JSON to generic ObjectNode
         DataStream<ObjectNode> inputStreamObject = createSourceFromStaticConfig(env);
@@ -121,27 +119,27 @@ public class TableApiStreamingJob {
             return new Tuple2<String, Timestamp>(properties.get("N02_001").asText(), receivedOn);
           }).returns(Types.TUPLE(Types.STRING, Types.SQL_TIMESTAMP));
 
-        // DataStream<Tuple2<String, Timestamp>> inputStreamWithTime = inputStream
-        //   .assignTimestampsAndWatermarks(new AscendingTimestampExtractor<Tuple2<String, Timestamp>>() {
-        //     @Override
-        //     public long extractAscendingTimestamp(Tuple2<String, Timestamp> element) {
-        //       // log.warn("element.f1:" + element.f1.toString() + " element.f0:" + element.f0);
-        //       return element.f1.getTime();
-        //     }});
+//        DataStream<Tuple2<String, Timestamp>> inputStreamWithTime = inputStream
+//          .assignTimestampsAndWatermarks(new AscendingTimestampExtractor<Tuple2<String, Timestamp>>() {
+//            @Override
+//            public long extractAscendingTimestamp(Tuple2<String, Timestamp> element) {
+//              // log.warn("element.f1:" + element.f1.toString() + " element.f0:" + element.f0);
+//              return element.f1.getTime();
+//            }});
 
-        DataStream<Tuple2<String, Timestamp>> inputStreamWithTime = inputStream
-          .assignTimestampsAndWatermarks(new AssignerWithPunctuatedWatermarks<Tuple2<String, Timestamp>>() {
-            @Override
-            public long extractTimestamp(Tuple2<String, Timestamp> element, long previousElementTimestamp) {
-              // log.warn("element.f1:" + element.f1.toString() + " element.f0:" + element.f0);
-              return element.f1.getTime();
-            }
+         DataStream<Tuple2<String, Timestamp>> inputStreamWithTime = inputStream
+           .assignTimestampsAndWatermarks(new AssignerWithPunctuatedWatermarks<Tuple2<String, Timestamp>>() {
+             @Override
+             public long extractTimestamp(Tuple2<String, Timestamp> element, long previousElementTimestamp) {
+               // log.warn("element.f1:" + element.f1.toString() + " element.f0:" + element.f0);
+               return element.f1.getTime();
+             }
 
-            @Override
-            public Watermark checkAndGetNextWatermark(Tuple2<String, Timestamp> lastElement, long extractedTimestamp) {
-              return new Watermark(extractedTimestamp);
-            }
-          });
+             @Override
+             public Watermark checkAndGetNextWatermark(Tuple2<String, Timestamp> lastElement, long extractedTimestamp) {
+               return new Watermark(extractedTimestamp);
+             }
+           });
 
         StreamTableEnvironment tableEnv = TableEnvironment.getTableEnvironment(env);
 
@@ -155,7 +153,7 @@ public class TableApiStreamingJob {
         Table resultTable = tableEnv.sqlQuery(""+
           "SELECT " +
           "  CAST (N02_001 AS VARCHAR(10)) AS RAILWAY_CLASS, " +
-          "  COUNT(*) OVER (PARTITION BY N02_001 ORDER BY rowtime RANGE BETWEEN INTERVAL '30' MINUTE PRECEDING AND CURRENT ROW) AS RAILWAY_CLASS_COUNT, " +
+          "  COUNT(*) OVER (PARTITION BY N02_001 ORDER BY rowtime RANGE BETWEEN INTERVAL '" + interval + "' " + uom + " PRECEDING AND CURRENT ROW) AS RAILWAY_CLASS_COUNT, " +
           "  RECEIVED_ON, " +
           "  rowtime " +
           " FROM Inputs "
@@ -172,13 +170,13 @@ public class TableApiStreamingJob {
         DataStream<Tuple4<String, Long, Timestamp, Timestamp>> resultSet = tableEnv.toAppendStream(resultTable, tupleType);
 
         resultSet.map((Tuple4<String, Long, Timestamp, Timestamp> value) -> {
-          String output = " RAILWAY_CLASS: " + value.f0 + " RECEIVED_ON: " + value.f2 + " rowtime: " + value.f3 + "\n";
-//          log.warn("resultSet output: " + output);
+          String output = " RAILWAY_CLASS: " + value.f0 + " COUNT: " + value.f1 + " rowtime: " + value.f3 + "\n";
+          log.warn("resultSet output: " + output);
 
           return new Tuple3<String, Long, Timestamp>(value.f0, value.f1, value.f2);
         })
         .returns(Types.TUPLE(Types.STRING, Types.LONG, Types.SQL_TIMESTAMP))
-        .addSink(createDataApiCheckpointSink());
+        .addSink(createDataApiSink());
 
 //        log.warn("getCheckpointInterval:" + env.getCheckpointInterval());
 

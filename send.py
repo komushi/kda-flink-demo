@@ -23,8 +23,8 @@ def getReferrer():
 
 cnt = 0
 
-while cnt < 40:
-        time.sleep(.100)
+while cnt < 5:
+        time.sleep(.050)
         cnt += 1
         data = getReferrer()
         dataString = json.dumps(getReferrer())

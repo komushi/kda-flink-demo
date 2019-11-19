@@ -16,15 +16,15 @@ import java.sql.Timestamp;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class DataApiSingleSink extends RichSinkFunction<Tuple3<String, Long, Timestamp>> {
+public class SinkDataApiSingle extends RichSinkFunction<Tuple3<String, Long, Timestamp>> {
 
     private Properties configProps;
     private String transactionId;
     private AWSRDSData rdsData;
 
-    private static final Logger log = LoggerFactory.getLogger(DataApiSingleSink.class);
+    private static final Logger log = LoggerFactory.getLogger(SinkDataApiSingle.class);
 
-    public DataApiSingleSink(Properties configProps) {
+    public SinkDataApiSingle(Properties configProps) {
         this.configProps = configProps;
     }
 

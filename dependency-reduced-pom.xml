@@ -3,7 +3,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.amazonaws</groupId>
   <artifactId>kda-flink-demo</artifactId>
-  <version>1.1.5</version>
+  <version>1.2.4</version>
   <build>
     <plugins>
       <plugin>
@@ -44,7 +44,7 @@
               </filters>
               <transformers>
                 <transformer>
-                  <mainClass>com.amazonaws.services.kinesisanalytics.TableApiStreamingJob</mainClass>
+                  <mainClass>com.amazonaws.services.kinesisanalytics.Starter</mainClass>
                 </transformer>
               </transformers>
             </configuration>
