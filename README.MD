@@ -1,6 +1,11 @@
-## 0. Create Aurora PostgreSQL Serverless Cluster
+# kda-flink-demo
+Hands-on guide to use Apache Flink app in Kinesis Data Analytics to aggregate time-series data with tumbling & sliding window in real-time.
 
-### 0-1. Create DB Subnet Group and Cluster
+
+
+## 1. Create Aurora PostgreSQL Serverless Cluster
+
+### 1-1. Create DB Subnet Group and Cluster
 ```
 aws rds create-db-subnet-group \
 --db-subnet-group-name database-vpc-subnet-group \
@@ -18,67 +23,140 @@ aws rds create-db-cluster --db-cluster-identifier sls-postgres \
 
 ```
 
-### 0-2. Create secret
+### 1-2. Create secret
 ```
 aws secretsmanager create-secret --name sls-postgres-secret --secret-string "file://creds-sls-postgres.json"
 ```
 
-### 0-3. Create Database 'triad'
+### 1-3. Create Database 'monitoring'
 ```
-aws rds-data execute-statement --resource-arn "arn:aws:rds:ap-northeast-1:042083552617:cluster:sls-postgres" --secret-arn "arn:aws:secretsmanager:ap-northeast-1:042083552617:secret:sls-postgres-secret-fNbs6H" --sql "SELECT datname FROM pg_database" --database "postgres"
+$ aws rds-data execute-statement --resource-arn "<cluster-arn>" --secret-arn "<secret-arn>" --sql "SELECT datname FROM pg_database" --database "postgres"
 
-aws rds-data execute-statement --resource-arn "arn:aws:rds:ap-northeast-1:042083552617:cluster:sls-postgres" --secret-arn "arn:aws:secretsmanager:ap-northeast-1:042083552617:secret:sls-postgres-secret-fNbs6H" --sql "create DATABASE triad" --database "postgres"
-```
-
-### 0-4. Create Table 'Tumbling'
-```
-aws rds-data execute-statement --resource-arn "arn:aws:rds:ap-northeast-1:042083552617:cluster:sls-postgres" --secret-arn "arn:aws:secretsmanager:ap-northeast-1:042083552617:secret:sls-postgres-secret-fNbs6H" --sql "create table Tumbling(RAILWAY_CLASS varchar(20), RAILWAY_CLASS_COUNT bigint, WINDOW_START timestamp, WINDOW_END timestamp, PRIMARY KEY(RAILWAY_CLASS, WINDOW_START, WINDOW_END))" --database "triad"
+$ aws rds-data execute-statement --resource-arn "<cluster-arn>" --secret-arn "<secret-arn>" --sql "CREATE DATABASE monitoring" --database "postgres"
 ```
 
-### 0-5. Create Table 'Sliding'
+### 1-4. Create Table 'Tumbling'
 ```
-aws rds-data execute-statement --resource-arn "arn:aws:rds:ap-northeast-1:042083552617:cluster:sls-postgres" --secret-arn "arn:aws:secretsmanager:ap-northeast-1:042083552617:secret:sls-postgres-secret-fNbs6H" --sql "create table Sliding(RAILWAY_CLASS varchar(20), RAILWAY_CLASS_COUNT bigint, EVENT_TIME timestamp, PRIMARY KEY(RAILWAY_CLASS))" --database "triad"
-```
-
-### 0-6. Create Table 'Hopping'
-```
-aws rds-data execute-statement --resource-arn "arn:aws:rds:ap-northeast-1:042083552617:cluster:sls-postgres" --secret-arn "arn:aws:secretsmanager:ap-northeast-1:042083552617:secret:sls-postgres-secret-fNbs6H" --sql "create table Hopping(RAILWAY_CLASS varchar(20), RAILWAY_CLASS_COUNT bigint, WINDOW_START timestamp, WINDOW_END timestamp, RECEIVED_ON timestamp, PRIMARY KEY(RAILWAY_CLASS, WINDOW_START, WINDOW_END))" --database "triad"
+$ aws rds-data execute-statement --resource-arn "<cluster-arn>" --secret-arn "<secret-arn>" --sql "CREATE TABLE tumbling(id VARCHAR(20), mc VARCHAR(10), rn VARCHAR(10), window_start TIMESTAMP, window_end TIMESTAMP, received_on TIMESTAMP, collected BIGINT, PRIMARY KEY(id, window_start, window_end))" --database "monitoring"
 ```
 
-## 1. Create local flink-connector-kinesis repo
-### 1-1. Download and Build Flink 1.9.1
-[flink](https://github.com/apache/flink/archive/release-1.9.1.zip)
-
+### 1-5. Create Table 'Sliding'
 ```
-wget -qO- https://github.com/apache/flink/archive/release-1.9.1.zip | bsdtar -xf-
-cd flink-release-1.9.1
+$ aws rds-data execute-statement --resource-arn "<cluster-arn>" --secret-arn "<secret-arn>" --sql "CREATE TABLE sliding(id VARCHAR(20), mc VARCHAR(10), rn VARCHAR(10), received_on TIMESTAMP, collected BIGINT, PRIMARY KEY(id))" --database "monitoring"
+```
+
+### 1-6. Create Table 'Hopping'
+```
+aws rds-data execute-statement --resource-arn "<cluster-arn>" --secret-arn "<secret-arn>" --sql "create table Hopping(RAILWAY_CLASS varchar(20), RAILWAY_CLASS_COUNT bigint, WINDOW_START timestamp, WINDOW_END timestamp, RECEIVED_ON timestamp, PRIMARY KEY(RAILWAY_CLASS, WINDOW_START, WINDOW_END))" --database "monitoring"
+```
+
+## 2. Create local flink-connector-kinesis repo
+### 2-1. Download and Build Flink 1.8.2
+```
+curl -LJO https://github.com/apache/flink/archive/release-1.8.2.zip && unzip flink-release-1.8.2.zip && cd flink-release-1.8.2
+
 mvn clean install -Pinclude-kinesis -DskipTests -pl flink-connectors/flink-connector-kinesis
 ```
 
-### 1-2. Download and Build Flink 1.6.2
+## 2-2. Build this repo
+* The built shaded jar file is under the target folder.
 ```
-wget -qO- https://github.com/apache/flink/archive/release-1.6.2.zip | bsdtar -xf-
-cd flink-release-1.6.2
-mvn clean install -Pinclude-kinesis -DskipTests -pl flink-connectors/flink-connector-kinesis
-```
-
-### 1-3. Download and Build Flink 1.6.4
-```
-wget -qO- https://github.com/apache/flink/archive/release-1.6.4.zip | bsdtar -xf-
-cd flink-release-1.6.4
-mvn clean install -Pinclude-kinesis -DskipTests -pl flink-connectors/flink-connector-kinesis
+mvn package -Dflink.version=1.8.2
 ```
 
-## 2. Build this repo
+## 3. Create and run the KDA application
+*Follow the AWS official document*
+[Create and Run the Application (Console)](https://docs.aws.amazon.com/kinesisanalytics/latest/java/get-started-exercise.html#get-started-exercise-7-console)
+
+### 3-1. Application Properties Groups
+
+#### 3-1-1. Group ID: SourceConfigProperties
+* Key: "AWS_REGION", Value: < your-region >
+* Key: "INPUT_STREAM_NAME", Value: The stream from [Kinesis Data Stream App](/KINESIS_STREAM_APP.MD)
+* Key: "STREAM_INITIAL_POSITION", Value: LATEST
+
+#### 3-1-2. Group ID: SinkConfigProperties
+* Key: "DATABASE", Value: The database name from [Aurora Serverless](/AURORA_SERVERLESS.MD)
+* Key: "RESOURCE_ARN", Value: The datbase cluster ARN from [Aurora Serverless](/AURORA_SERVERLESS.MD)
+* Key: "SECRET_ARN", Value: The secret ARN from [Aurora Serverless](/AURORA_SERVERLESS.MD)
+* Key: "THRESHOLD", Value: 4
+
+#### 3-1-3. Group ID: ProcessorConfigProperties
+* Key: "CHECKPOINT_INTERVAL", Value: 30000
+* Key: "INTERVAL_AMOUNT", Value: 1
+* Key: "INTERVAL_UOM", Value: MINUTE(2)
+* Key: "INTERVAL_IN_SECOND", Value: 4
+* Key: "OFFSET_IN_SECOND", Value: 5
+
+### 3-2. Update Service execution IAM role
+*Default role name kinesis-analytics-flink-analytics-monitoring-< your-region >*
+
+#### 3-2-1. Add inline policy 'read-all-secret' to read secrets
 ```
-mvn package
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Action": [
+                "secretsmanager:GetSecretValue"
+            ],
+            "Resource": [
+                "*"
+            ],
+            "Effect": "Allow"
+        }
+    ]
+}
 ```
 
+#### 3-2-2. Add inline policy 'read-all-stream' to read streams
 ```
-SHARD_ITERATOR=$(aws kinesis get-shard-iterator --shard-id shardId-000000000000 --shard-iterator-type TRIM_HORIZON --stream-name amp_geojson --query 'ShardIterator')
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "ReadInputStream",
+            "Effect": "Allow",
+            "Action": "kinesis:*",
+            "Resource": "*"
+        }
+    ]
+}
+```
 
-aws kinesis get-records --shard-iterator $SHARD_ITERATOR --limit 10
+#### 3-2-3. Add inline policy 'use-all-dataapi' to access Data API of Aurora Serverless
 ```
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Action": [
+                "rds-data:BatchExecuteStatement",
+                "rds-data:BeginTransaction",
+                "rds-data:CommitTransaction",
+                "rds-data:ExecuteStatement",
+                "rds-data:RollbackTransaction",
+                "rds-data:DeleteItems",
+                "rds-data:ExecuteSql",
+                "rds-data:GetItems",
+                "rds-data:InsertItems",
+                "rds-data:UpdateItems"
+            ],
+            "Resource": [
+                "*"
+            ],
+            "Effect": "Allow"
+        }
+    ]
+}
+```
+
+### 3-3. Start the application and Check the aggregated data in Aurora
+#### 3-3-1. Tumbling Window
+![screenshot](images/tumbling.png)
+
+#### 3-3-2. Sliding Window
+![screenshot](images/sliding.png)
 
 ---------------
 ## 4. References
