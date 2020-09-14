@@ -2,7 +2,7 @@
 Hands-on guide to use Apache Flink app in Kinesis Data Analytics to aggregate time-series data with tumbling & sliding window in real-time.
 
 ## What is the architecture of Kinesis Data Analytics with Apache Flink?
-![Tumbling Windows](images/architecture.svg)
+![Tumbling Windows](images/architecture.png)
 
 ## What is a 'Tumbling Window'?
 
