@@ -30,6 +30,6 @@ while cnt < 5:
         dataString = json.dumps(getReferrer())
         print(dataString)
         kinesis.put_record(
-                StreamName="amp_geojson",
+                StreamName="kda_geojson",
                 Data=dataString,
                 PartitionKey=data['properties']['ID'])
